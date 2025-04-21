@@ -49,3 +49,4 @@ Options:
 Notes:
 - Have not tested HTTPS option, only HTTP at this point
 - As this needs to be publicly accessible, care should be taken around the risk that this could bring to the host that is running this...for testing purposes only.
+- The '-a' option has been added to allow for the logging of any webhook with any format.  For a non-Splunk formatted webhook source, you need to prepend the Token with "Splunk" and a space.
