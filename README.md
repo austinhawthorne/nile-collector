@@ -27,12 +27,12 @@ Usage:
 
 Sample Output (Summary Mode):
 ```
-- 2025-04-21 13:07:57,870 INFO: Summary [1]: {"eventType": "test"}
-- 2025-04-21 13:30:02,084 INFO: Summary [1]: {"id": "046d0018-e2b2-48c3-9df2-b951e801d7f3", "user": "foo@bar", "action": "Test", "description": "Tested SIEM 'default'", "time": 1745255278}
-- 2025-04-21 13:30:02,087 INFO: Summary [2]: {"id": "bf3a7512-fbcd-4e41-9a5d-599d58ce2f01", "user": "foo@bar", "action": "Login", "description": "Login Request", "time": 1745255188}
-- 2025-04-21 13:30:02,090 INFO: Summary [3]: {"id": "fe594372-2f54-45fb-945b-d3ea2a99ef13", "user": "foo@bar", "action": "Logout", "description": "Logout Request", "time": 1745254880}
-- 2025-04-21 13:30:02,093 INFO: Summary [4]: {"id": "e87d470d-8850-400b-ab2b-b3919eaafa84", "user": "foo@bar", "action": "Update", "description": "Updated DHCP Setting 'Acme-DHCP'", "time": 1745255237}
-- 2025-04-21 13:30:02,095 INFO: Summary [5]: {"id": "bf53f3f5-01dd-44da-844b-661e46d72062", "user": "foo@bar", "action": "Create", "description": "Created User 'Bob Jones'", "time": 1745255270}
+2025-04-21 13:07:57,870 INFO: Summary [1]: {"eventType": "test"}
+2025-04-21 13:30:02,084 INFO: Summary [1]: {"id": "046d0018-e2b2-48c3-9df2-b951e801d7f3", "user": "foo@bar", "action": "Test", "description": "Tested SIEM 'default'", "time": 1745255278}
+2025-04-21 13:30:02,087 INFO: Summary [2]: {"id": "bf3a7512-fbcd-4e41-9a5d-599d58ce2f01", "user": "foo@bar", "action": "Login", "description": "Login Request", "time": 1745255188}
+2025-04-21 13:30:02,090 INFO: Summary [3]: {"id": "fe594372-2f54-45fb-945b-d3ea2a99ef13", "user": "foo@bar", "action": "Logout", "description": "Logout Request", "time": 1745254880}
+2025-04-21 13:30:02,093 INFO: Summary [4]: {"id": "e87d470d-8850-400b-ab2b-b3919eaafa84", "user": "foo@bar", "action": "Update", "description": "Updated DHCP Setting 'Acme-DHCP'", "time": 1745255237}
+2025-04-21 13:30:02,095 INFO: Summary [5]: {"id": "bf53f3f5-01dd-44da-844b-661e46d72062", "user": "foo@bar", "action": "Create", "description": "Created User 'Bob Jones'", "time": 1745255270}
 ```
 
 Options:
