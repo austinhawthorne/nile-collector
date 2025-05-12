@@ -1,42 +1,23 @@
 #!/usr/bin/env python3
-'''
+"""
 HTTP(S) Event Collector with Splunk Token Scheme, Nile SIEM Formatting,
 Validation, Enrichment, Interface Binding, Debug Mode, SQLite Persistence,
 Summary Option, Splunk HEC Endpoint Compatibility, Health Check,
-CLI-Controlled Health-Check Log Suppression, Allow-Anything Mode, and NDJSON Batch Support
+CLI-Controlled Health-Check Log Suppression, Allow-Anything Mode,
+and NDJSON Batch Support
 
 Features:
 - Token authentication using "Splunk <token>" (auto-generated if omitted)
 - Nile SIEM schema validation & enrichment for known types
-- Accepts unknown eventType values without schema validation, or fully allow any format with -a
-- Supports Splunk HEC endpoints (/events, /services/collector/event) and root POST /
-- Health check endpoint (/services/collector/health) returning HTTP 200
-- CLI option to suppress health-check & localhost access logs (-l/--suppress-health-logs)
-- CLI option to skip all schema validation (-a/--allow-anything)
-- Interface binding by name
-- Debug mode with verbose request logging and 404 diagnostics
-- Always persists to SQLite DB (default: events.db)
-- Summary or detailed output
-- HTTP or HTTPS modes
-
-Usage:
-  pip install flask python-dateutil
-  python event-collector.py -c cert.pem -k key.pem [options]
-
-Options:
-  -i, --interface           Interface to bind to (e.g., eth0). Defaults to all.
-  -p, --port                Port to listen on (default: 8088)
-  -t, --token               Token for authentication; if omitted, a "Splunk" token is generated.
-  -c, --certfile            SSL certificate file (required for HTTPS)
-  -k, --keyfile             SSL key file (required for HTTPS)
-      --http                Run without TLS (plain HTTP)
-  -d, --debug               Enable debug mode (verbose request dump)
-  -l, --suppress-health-logs  Suppress health-check & localhost access logs
-  -a, --allow-anything      Allow any event format without schema validation
-  --db-file                Path to SQLite DB file (default: events.db)
-  -s, --summary             Print summarized events instead of full payloads
-'''
-
+- Optional schema-less ingestion with -a/--allow-anything
+- Supports root '/', '/events', and Splunk HEC '/services/collector/event'
+- Health-check endpoint at '/services/collector/health'
+- Suppress health-check & localhost access logs with -l/--suppress-health-logs
+- Debug mode (-d) for verbose request logging
+- Configurable interface (-i) and port (-p)
+- Automatic or user-specified SQLite DB persistence (--db-file)
+- Summary (-s) or detailed output
+"""
 import os
 import argparse
 import json
@@ -51,11 +32,11 @@ import sqlite3
 from flask import Flask, request, abort, jsonify
 from dateutil import parser as dateparser
 
-# Constants for interface ioctl
+# Constants
 SIOCGIFADDR = 0x8915
 app = Flask(__name__)
 
-# Global flags and connections
+# Globals
 summary_mode = False
 allow_anything = False
 suppress_health_logs = False
@@ -64,28 +45,40 @@ db_conn = None
 
 # Nile SIEM schema definitions
 SCHEMA = {
-    'audit_trail': ['version','id','auditTime','user','sourceIP','agent','auditDescription','entity','action','eventType'],
-    'end_user_device_events': ['eventType','macAddress','ssid','bssid','clientEventDescription','clientEventSeverity','clientEventSuppressionStatus','timestamp','additionalDetails'],
-    'nile_alerts': ['version','id','alertSubscriptionCategory','alertType','alertStatus','alertSubject','alertSummary','impact','customer','site','building','floor','startTime','duration','additionalInformation','eventType']
+    'audit_trail': [
+        'version','id','auditTime','user','sourceIP','agent',
+        'auditDescription','entity','action','eventType'
+    ],
+    'end_user_device_events': [
+        'eventType','macAddress','ssid','bssid',
+        'clientEventDescription','clientEventSeverity',
+        'clientEventSuppressionStatus','timestamp','additionalDetails'
+    ],
+    'nile_alerts': [
+        'version','id','alertSubscriptionCategory','alertType',
+        'alertStatus','alertSubject','alertSummary','impact',
+        'customer','site','building','floor','startTime',
+        'duration','additionalInformation','eventType'
+    ]
 }
 
 def get_ip_address(ifname):
-    '''Retrieve IPv4 address for an interface name.'''
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    """Retrieve IPv4 address for the named interface."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        iface = struct.pack('256s', ifname.encode()[:15])
-        res = fcntl.ioctl(s.fileno(), SIOCGIFADDR, iface)
-        return socket.inet_ntoa(res[20:24])
+        iface_bytes = struct.pack('256s', ifname.encode('utf-8')[:15])
+        addr = fcntl.ioctl(sock.fileno(), SIOCGIFADDR, iface_bytes)
+        return socket.inet_ntoa(addr[20:24])
     except Exception as e:
         logging.error('Interface lookup failed for %s: %s', ifname, e)
         sys.exit(1)
 
+
 def configure_logging(debug, suppress_health):
-    '''Configure root and werkzeug logging, with optional suppression.'''
+    """Configure root and werkzeug logging."""
     level = logging.DEBUG if debug else logging.INFO
     logging.basicConfig(level=level, format='%(asctime)s %(levelname)s: %(message)s')
     app.debug = debug
-    # Configure Flask/Werkzeug access logs
     werk_logger = logging.getLogger('werkzeug')
     werk_logger.setLevel(level)
     if suppress_health:
@@ -100,30 +93,31 @@ def configure_logging(debug, suppress_health):
         werk_logger.addFilter(AccessLogFilter())
     if debug:
         msg = 'Debug mode: verbose request logs'
-        if suppress_health:
-            msg += '; health-check & localhost logs suppressed'
-        else:
-            msg += '; health-check & localhost logs enabled'
+        msg += '; health-check & localhost logs suppressed' if suppress_health else '; health-check & localhost logs enabled'
         logging.debug(msg)
 
 @app.before_request
+
 def log_request():
-    '''Log incoming requests when in debug mode.'''
+    """Log incoming requests when in debug mode, conditionally suppress health-check."""
     if app.debug:
+        if suppress_health_logs and request.method == 'GET' and request.path == '/services/collector/health':
+            return
         logging.debug('Request: %s %s', request.method, request.url)
         logging.debug('Headers: %s', dict(request.headers))
         logging.debug('Body: %s', request.get_data(as_text=True))
 
 @app.errorhandler(404)
+
 def handle_404(e):
-    '''Log unmatched routes.'''
+    """Log and return 404 for unmatched routes."""
     logging.error('404 Not Found: %s %s', request.method, request.url)
     return 'Not Found', 404
 
 # Health-check endpoint
 @app.route('/services/collector/health', methods=['GET'])
 def health_check():
-    '''Return HTTP 200 for health checks.'''
+    """Return HTTP 200 for valid health-check requests."""
     auth = request.headers.get('Authorization', '')
     if not auth.startswith('Splunk '):
         abort(401)
@@ -131,12 +125,12 @@ def health_check():
         abort(401)
     return '', 200
 
-# Event ingestion endpoints (root, /events, Splunk HEC)
+# Event ingestion endpoints
 @app.route('/', methods=['POST'])
 @app.route('/events', methods=['POST'])
 @app.route('/services/collector/event', methods=['POST'])
 def receive_events():
-    '''Authenticate, parse JSON or NDJSON, optional validation, log, persist.'''
+    """Authenticate, parse JSON/NDJSON, optional validation, log, persist."""
     auth = request.headers.get('Authorization', '')
     if not auth.startswith('Splunk '):
         logging.warning('Invalid auth scheme: %s', auth)
@@ -145,20 +139,19 @@ def receive_events():
         logging.warning('Invalid token: %s', auth)
         abort(401)
 
-        # Parse JSON vs NDJSON based on Content-Type
-    events = []
+    # Parse payload
     if request.is_json:
         data = request.get_json()
-        # Splunk HEC envelope
         if isinstance(data, dict) and 'event' in data and 'time' in data and 'sourcetype' in data:
             events = [data['event']]
         else:
             raw = data.get('events', data) if isinstance(data, dict) else data
             events = raw if isinstance(raw, list) else [raw]
     else:
-        # NDJSON parsing
+        events = []
         for line in request.get_data(as_text=True).splitlines():
-            if not line.strip():
+            line = line.strip()
+            if not line:
                 continue
             try:
                 obj = json.loads(line)
@@ -169,12 +162,24 @@ def receive_events():
                 events.append(obj['event'])
             else:
                 raw = obj.get('events', obj) if isinstance(obj, dict) else obj
-                lines = raw if isinstance(raw, list) else [raw]
-                events.extend(lines)
+                batch = raw if isinstance(raw, list) else [raw]
+                events.extend(batch)
+
     now = int(time.time())
     for idx, ev in enumerate(events, 1):
         if not allow_anything:
             etype = ev.get('eventType')
+            # Remap variant keys for end_user_device_events
+            if etype == 'end_user_device_events' and all(
+                k in ev for k in ('clientMac','clientEventTimestamp','clientEventAdditionalDetails')
+            ):
+                ev['macAddress'] = ev.pop('clientMac')
+                ev['timestamp'] = ev.pop('clientEventTimestamp')
+                ev['additionalDetails'] = ev.pop('clientEventAdditionalDetails')
+                ev['ssid'] = ev.pop('connectedSsid', '')
+                ev['bssid'] = ev.pop('connectedBssid', '')
+                ev['clientEventSuppressionStatus'] = ev.get('clientEventSuppressionStatus', '')
+            # Schema validation
             if etype in SCHEMA:
                 missing = [f for f in SCHEMA[etype] if f not in ev]
                 if missing:
@@ -186,32 +191,36 @@ def receive_events():
                         abort(400, description=f'Invalid UUID: {ev.get("id")}')
                 try:
                     if etype == 'audit_trail':
-                        dt = dateparser.parse(ev['auditTime']); ev['auditTimeEpoch'] = int(dt.timestamp())
+                        dt = dateparser.parse(ev['auditTime'])
+                        ev['auditTimeEpoch'] = int(dt.timestamp())
                     elif etype == 'nile_alerts':
-                        st = dateparser.parse(ev['startTime']); ev['startTimeEpoch'] = int(st.timestamp())
+                        st = dateparser.parse(ev['startTime'])
+                        ev['startTimeEpoch'] = int(st.timestamp())
                     elif etype == 'end_user_device_events':
                         ts = ev['timestamp']
                         if isinstance(ts, str):
                             ev['timestamp'] = int(ts) if ts.isdigit() else int(dateparser.parse(ts).timestamp() * 1000)
                 except Exception as e:
                     abort(400, description=f'Timestamp error for {etype}: {e}')
-            else:
-                logging.debug("Unknown eventType '%s'; skipping validation", etype)
+        # Log event
         payload = {'time': now, 'sourcetype': '_json', 'event': ev}
         if summary_mode:
             summary_map = {
-                'audit_trail': {'id': ev.get('id'), 'user': ev.get('user'), 'action': ev.get('action'), 'description': ev.get('auditDescription'), 'time': ev.get('auditTimeEpoch')},
-                'nile_alerts': {'id': ev.get('id'), 'type': ev.get('alertType'), 'subject': ev.get('alertSubject'), 'summar': ev.get('alertSummary'), 'start': ev.get('startTimeEpoch')},
+                'audit_trail': {'id': ev.get('id'), 'user': ev.get('user'), 'action': ev.get('action'), 'time': ev.get('auditTimeEpoch')},
+                'nile_alerts': {'id': ev.get('id'), 'type': ev.get('alertType'), 'subject': ev.get('alertSubject'), 'start': ev.get('startTimeEpoch')},
                 'end_user_device_events': {'mac': ev.get('macAddress'), 'desc': ev.get('clientEventDescription'), 'time': ev.get('timestamp')}
             }
             logging.info('Summary [%d]: %s', idx, json.dumps(summary_map.get(ev.get('eventType'), {'eventType': ev.get('eventType')})))
         else:
             logging.info('Detailed [%d]: %s', idx, json.dumps(payload))
 
-    # Persist all events
+    # Persist events
     cursor = db_conn.cursor()
     for ev in events:
-        cursor.execute('INSERT INTO events(time,sourcetype,event) VALUES(?,?,?)', (now, '_json', json.dumps(ev)))
+        cursor.execute(
+            'INSERT INTO events(time,sourcetype,event) VALUES(?,?,?)',
+            (now, '_json', json.dumps(ev))
+        )
     db_conn.commit()
 
     return jsonify({"text": "Success", "code": 0}), 200
@@ -231,13 +240,13 @@ if __name__ == '__main__':
     parser.add_argument('-s', '--summary', action='store_true', help='Summary mode')
     args = parser.parse_args()
 
-    # Configure logging and flags
+    # Apply flags
     summary_mode = args.summary
     allow_anything = args.allow_anything
     suppress_health_logs = args.suppress_health_logs
     configure_logging(args.debug, suppress_health_logs)
 
-    # Resolve host/interface
+    # Determine bind address
     host = get_ip_address(args.interface) if args.interface else '0.0.0.0'
 
     # Initialize token and DB once (skip parent in debug mode)

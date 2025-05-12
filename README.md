@@ -18,7 +18,7 @@ Features:
 Usage:
 - First you need to do the below on the system that will be running this collector:
   - pip install flask python-dateutil
-  - python nile-collector.py -c cert.pem -k key.pem [options]
+  - python nile-collector.py [options]
     - You will need a valid certificate and this collector will have to be accessible via the Internet (how you accomplish this is outside the scope of this)
     - If you do not set a token, one will be generated, take note of it for the next step
 - In a Nile tenant, setup a new Splunk integration using the URL/IPADDR of your collector instance (publicly accessible) and the token from the previous step.
@@ -47,6 +47,7 @@ Options:
 -l, --suppress-health-logs  Suppress health-check access logs (off by default)
 --db-file                Path to SQLite DB file (default: events.db)
 -s, --summary             Print summarized events instead of full payloads
+-a, --allow-anything	  Accept any json formatted log, good for testing webhook integration
 ```
 
 Notes:
